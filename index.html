@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Performance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131c;
+    --surface2: #1c1c2a;
+    --border: rgba(255,255,255,0.07);
+    --text: #f0f0f8;
+    --muted: #7a7a9a;
+    --ig: #e1306c;
+    --fb: #1877f2;
+    --yt: #ff0000;
+    --tt: #69c9d0;
+    --accent: #a78bfa;
+    --green: #34d399;
+    --red: #f87171;
+    --yellow: #fbbf24;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; }
+
+  .grain {
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity:0.4;
+  }
+
+  .wrapper { position:relative; z-index:1; max-width:1300px; margin:0 auto; padding:40px 24px; }
+
+  header { margin-bottom:40px; }
+  .eyebrow { font-family:'DM Mono',monospace; font-size:11px; color:var(--accent); letter-spacing:3px; text-transform:uppercase; margin-bottom:10px; }
+  h1 { font-size:clamp(28px,4vw,48px); font-weight:800; line-height:1.1; }
+  h1 span { color:var(--accent); }
+  .subtitle { color:var(--muted); font-family:'DM Mono',monospace; font-size:13px; margin-top:8px; }
+
+  /* TABS */
+  .tabs { display:flex; gap:6px; margin-bottom:32px; flex-wrap:wrap; }
+  .tab { padding:8px 18px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; border:1px solid var(--border); background:transparent; color:var(--muted); transition:all .2s; }
+  .tab.active, .tab:hover { background:var(--accent); color:#000; border-color:var(--accent); }
+
+  .section { display:none; }
+  .section.active { display:block; }
+
+  /* KPI CARDS */
+  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; margin-bottom:32px; }
+  .kpi-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:20px; position:relative; overflow:hidden;
+    animation: fadeUp 0.5s ease both;
+  }
+  .kpi-card::before { content:''; position:absolute; inset:0; border-radius:12px; background:linear-gradient(135deg,rgba(167,139,250,0.05),transparent); }
+  .kpi-label { font-family:'DM Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; margin-bottom:8px; }
+  .kpi-value { font-size:26px; font-weight:800; line-height:1; }
+  .kpi-sub { font-family:'DM Mono',monospace; font-size:11px; color:var(--muted); margin-top:6px; }
+  .kpi-formula { font-family:'DM Mono',monospace; font-size:10px; color:var(--accent); margin-top:4px; opacity:0.7; }
+  .badge { display:inline-block; padding:3px 8px; border-radius:20px; font-size:11px; font-weight:700; font-family:'DM Mono',monospace; margin-top:8px; }
+  .badge.up { background:rgba(52,211,153,0.15); color:var(--green); }
+  .badge.down { background:rgba(248,113,113,0.15); color:var(--red); }
+  .badge.neutral { background:rgba(251,191,36,0.15); color:var(--yellow); }
+
+  /* CHARTS */
+  .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; }
+  @media(max-width:700px) { .chart-grid { grid-template-columns:1fr; } }
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; }
+  .chart-card.wide { grid-column:1/-1; }
+  .chart-title { font-size:13px; font-weight:700; margin-bottom:4px; }
+  .chart-sub { font-family:'DM Mono',monospace; font-size:10px; color:var(--muted); margin-bottom:16px; }
+  canvas { max-height:260px; }
+
+  /* PLATFORMS */
+  .platform-pill { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+  .p-ig { background:rgba(225,48,108,0.15); color:var(--ig); }
+  .p-fb { background:rgba(24,119,242,0.15); color:var(--fb); }
+  .p-yt { background:rgba(255,0,0,0.15); color:var(--yt); }
+  .p-tt { background:rgba(105,201,208,0.15); color:var(--tt); }
+
+  /* WINS/FLAGS */
+  .insights-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:600px) { .insights-grid { grid-template-columns:1fr; } }
+  .insight-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; }
+  .insight-icon { font-size:22px; margin-bottom:10px; }
+  .insight-title { font-size:13px; font-weight:700; margin-bottom:6px; }
+  .insight-body { font-size:12px; color:var(--muted); line-height:1.6; font-family:'DM Mono',monospace; }
+  .insight-card.win { border-color:rgba(52,211,153,0.2); }
+  .insight-card.flag { border-color:rgba(248,113,113,0.2); }
+
+  /* EXEC SUMMARY */
+  .exec-box { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px; margin-bottom:24px; }
+  .exec-box p { line-height:1.8; color:#c8c8e0; font-size:15px; }
+  .exec-box strong { color:var(--text); }
+
+  /* QUESTIONS */
+  .q-list { display:flex; flex-direction:column; gap:12px; }
+  .q-item { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px 20px; display:flex; gap:16px; align-items:flex-start; }
+  .q-num { font-family:'DM Mono',monospace; font-size:24px; font-weight:500; color:var(--accent); opacity:0.4; line-height:1; flex-shrink:0; }
+  .q-text { font-size:14px; color:var(--text); line-height:1.6; }
+  .q-hint { font-family:'DM Mono',monospace; font-size:11px; color:var(--muted); margin-top:4px; }
+
+  /* LAYOUT DESC */
+  .layout-section { margin-bottom:20px; }
+  .layout-zone { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:10px; }
+  .layout-zone-title { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:4px; font-family:'DM Mono',monospace; letter-spacing:1px; }
+  .layout-zone-desc { font-size:12px; color:var(--muted); line-height:1.6; }
+
+  /* TRENDS TABLE */
+  table { width:100%; border-collapse:collapse; font-family:'DM Mono',monospace; font-size:12px; }
+  th { text-align:left; padding:10px 14px; color:var(--muted); font-size:10px; letter-spacing:1.5px; text-transform:uppercase; border-bottom:1px solid var(--border); }
+  td { padding:10px 14px; border-bottom:1px solid var(--border); }
+  tr:last-child td { border:none; }
+  tr:hover td { background:var(--surface2); }
+  .up-val { color:var(--green); }
+  .down-val { color:var(--red); }
+
+  /* RACE CHART */
+  .race-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px; }
+  .race-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .race-controls { display:flex; gap:10px; align-items:center; }
+  .race-day-label { font-family:'DM Mono',monospace; font-size:28px; font-weight:500; color:var(--accent); min-width:80px; }
+  .race-btn { padding:8px 18px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:700; border:1px solid var(--border); background:var(--surface2); color:var(--text); transition:all .2s; font-family:'Syne',sans-serif; }
+  .race-btn:hover, .race-btn.playing { background:var(--accent); color:#000; border-color:var(--accent); }
+  .race-speed { font-family:'DM Mono',monospace; font-size:11px; color:var(--muted); }
+  .race-bars { display:flex; flex-direction:column; gap:14px; }
+  .race-row { display:flex; align-items:center; gap:12px; }
+  .race-platform { font-family:'DM Mono',monospace; font-size:12px; font-weight:500; width:80px; flex-shrink:0; text-align:right; }
+  .race-bar-track { flex:1; background:var(--surface2); border-radius:6px; height:36px; position:relative; overflow:hidden; }
+  .race-bar-fill { height:100%; border-radius:6px; transition:width 0.6s cubic-bezier(0.4,0,0.2,1); position:relative; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; min-width:4px; }
+  .race-bar-val { font-family:'DM Mono',monospace; font-size:11px; font-weight:500; color:#fff; white-space:nowrap; }
+  .race-rank { font-family:'DM Mono',monospace; font-size:18px; width:28px; flex-shrink:0; color:var(--muted); text-align:center; }
+  .race-rank.gold { color:#fbbf24; }
+  .race-timeline { display:flex; gap:6px; margin-top:20px; flex-wrap:wrap; }
+  .race-dot { width:28px; height:28px; border-radius:50%; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-family:'DM Mono',monospace; font-size:9px; color:var(--muted); cursor:pointer; transition:all .2s; flex-shrink:0; }
+  .race-dot.active { border-color:var(--accent); background:var(--accent); color:#000; font-weight:700; }
+  .race-dot:hover { border-color:var(--accent); }
+
+  /* MOMENTUM */
+  .momentum-wrap { display:flex; flex-direction:column; gap:20px; }
+  .momentum-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; }
+
+  @keyframes fadeUp {
+    from { opacity:0; transform:translateY(16px); }
+    to { opacity:1; transform:translateY(0); }
+  }
+  .kpi-card:nth-child(1){animation-delay:.05s}
+  .kpi-card:nth-child(2){animation-delay:.1s}
+  .kpi-card:nth-child(3){animation-delay:.15s}
+  .kpi-card:nth-child(4){animation-delay:.2s}
+  .kpi-card:nth-child(5){animation-delay:.25s}
+  .kpi-card:nth-child(6){animation-delay:.3s}
+  .kpi-card:nth-child(7){animation-delay:.35s}
+  .kpi-card:nth-child(8){animation-delay:.4s}
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div class="wrapper">
+  <header>
+    <div class="eyebrow">📹 Meen Yadob · Feb 19 – Mar 8, 2026</div>
+    <h1>Video Performance <span>Dashboard</span></h1>
+    <div class="subtitle">IG · FB · YT · TT — Cumulative views & engagement analysis</div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('kpis', this)">KPIs</button>
+    <button class="tab" onclick="showTab('trends', this)">Trends</button>
+    <button class="tab" onclick="showTab('charts', this)">Charts</button>
+    <button class="tab" onclick="showTab('race', this)">🏁 Platform Race</button>
+    <button class="tab" onclick="showTab('momentum', this)">⚡ Eng Momentum</button>
+    <button class="tab" onclick="showTab('followers', this)">👥 Followers</button>
+    <button class="tab" onclick="showTab('insights', this)">Wins & Flags</button>
+    <button class="tab" onclick="showTab('exec', this)">Exec Summary</button>
+    <button class="tab" onclick="showTab('ks2025', this)">📊 Kol Sana 2025</button>
+    <button class="tab" onclick="showTab('compare', this)">⚔️ 2025 vs 2026</button>
+
+  </div>
+
+  <!-- KPIs -->
+  <div class="section active" id="kpis">
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Views (All Platforms)</div>
+        <div class="kpi-value">126.5M</div>
+        <div class="kpi-sub">Cumulative as of Mar 8</div>
+        <div class="kpi-formula">25.22 + 42.93 + 11.75 + 46.60M</div>
+        <span class="badge up">🚀 Viral Scale</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Engagements</div>
+        <div class="kpi-value">844K</div>
+        <div class="kpi-sub">All platforms combined</div>
+        <div class="kpi-formula">425K + 109K + 73K + 236K</div>
+        <span class="badge up">↑ Still growing</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Overall Eng. Rate</div>
+        <div class="kpi-value">0.67%</div>
+        <div class="kpi-sub">844K eng ÷ 126.5M views</div>
+        <div class="kpi-formula">Total Eng ÷ Total Views</div>
+        <span class="badge neutral">Industry avg ~1–3%</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Fastest Growing Platform</div>
+        <div class="kpi-value" style="color:var(--tt)">TikTok</div>
+        <div class="kpi-sub">46.60M views — leads all platforms</div>
+        <div class="kpi-formula">Δ Views day-over-day, max platform</div>
+        <span class="badge up">↑ 1.45M added Mar 8</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Daily New Views</div>
+        <div class="kpi-value">7.03M</div>
+        <div class="kpi-sub">Total views ÷ 18 days</div>
+        <div class="kpi-formula">126.5M ÷ 18</div>
+        <span class="badge up">Sustained growth</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Best Eng. Rate Platform</div>
+        <div class="kpi-value" style="color:var(--ig)">Instagram</div>
+        <div class="kpi-sub">425K eng on 25.22M views = 1.69%</div>
+        <div class="kpi-formula">Eng ÷ Views per platform (Mar 8)</div>
+        <span class="badge up">1.69% — Best quality</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TT View Dominance</div>
+        <div class="kpi-value">36.8%</div>
+        <div class="kpi-sub">TT share of total views</div>
+        <div class="kpi-formula">46.60M ÷ 126.5M</div>
+        <span class="badge up">Leading platform</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">YouTube Performance</div>
+        <div class="kpi-value" style="color:var(--yt)">11.75M</div>
+        <div class="kpi-sub">73,266 eng · 0.62% rate</div>
+        <div class="kpi-formula">YT views stable — Mar 8 eng pending</div>
+        <span class="badge neutral">⚠ Mar 8 eng pending</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRENDS -->
+  <div class="section" id="trends">
+    <div class="chart-card" style="margin-bottom:20px;">
+      <div class="chart-title">Day-over-Day View Growth — All Platforms</div>
+      <div class="chart-sub">Cumulative total views each day (millions)</div>
+      <table>
+        <thead>
+          <tr><th>Date</th><th>IG Views</th><th>FB Views</th><th>YT Views</th><th>TT Views</th><th>All Platforms</th><th>DoD Δ All</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Feb 19</td><td>0.94M</td><td>1.34M</td><td>0.22M</td><td>0.69M</td><td>3.19M</td><td class="neutral-val">—</td></tr>
+          <tr><td>Feb 20</td><td>2.93M</td><td>3.64M</td><td>0.97M</td><td>2.68M</td><td>10.22M</td><td class="up-val">+220%</td></tr>
+          <tr><td>Feb 21</td><td>4.62M</td><td>5.65M</td><td>1.48M</td><td>4.10M</td><td>15.85M</td><td class="up-val">+55%</td></tr>
+          <tr><td>Feb 22</td><td>5.27M</td><td>7.49M</td><td>2.47M</td><td>5.72M</td><td>20.95M</td><td class="up-val">+32%</td></tr>
+          <tr><td>Feb 23</td><td>6.33M</td><td>9.55M</td><td>3.21M</td><td>7.97M</td><td>27.06M</td><td class="up-val">+29%</td></tr>
+          <tr><td>Feb 24</td><td>6.74M</td><td>10.38M</td><td>3.93M</td><td>9.57M</td><td>30.62M</td><td class="up-val">+13%</td></tr>
+          <tr><td>Feb 25</td><td>7.61M</td><td>12.22M</td><td>4.56M</td><td>11.19M</td><td>35.58M</td><td class="up-val">+16%</td></tr>
+          <tr><td>Feb 26</td><td>8.72M</td><td>14.54M</td><td>5.21M</td><td>13.47M</td><td>41.94M</td><td class="up-val">+18%</td></tr>
+          <tr><td>Feb 27</td><td>9.49M</td><td>16.47M</td><td>6.08M</td><td>16.58M</td><td>48.63M</td><td class="up-val">+16%</td></tr>
+          <tr><td>Feb 28</td><td>10.14M</td><td>19.95M</td><td>6.59M</td><td>20.31M</td><td>56.99M</td><td class="up-val">+17%</td></tr>
+          <tr><td>Mar 1</td><td>12.72M</td><td>23.37M</td><td>7.45M</td><td>23.93M</td><td>67.47M</td><td class="up-val">+18%</td></tr>
+          <tr><td>Mar 2</td><td>14.60M</td><td>25.73M</td><td>8.20M</td><td>28.19M</td><td>76.72M</td><td class="up-val">+14%</td></tr>
+          <tr><td>Mar 3</td><td>16.35M</td><td>28.32M</td><td>8.72M</td><td>32.15M</td><td>85.54M</td><td class="up-val">+11%</td></tr>
+          <tr><td>Mar 4</td><td>18.14M</td><td>30.65M</td><td>9.42M</td><td>36.04M</td><td>94.25M</td><td class="up-val">+10%</td></tr>
+          <tr><td>Mar 5</td><td>20.03M</td><td>33.14M</td><td>10.18M</td><td>40.17M</td><td>103.52M</td><td class="up-val">+10%</td></tr>
+          <tr><td>Mar 6</td><td>21.96M</td><td>35.82M</td><td>10.96M</td><td>43.92M</td><td>112.66M</td><td class="up-val">+9%</td></tr>
+          <tr><td>Mar 7</td><td>23.49M</td><td>39.17M</td><td>11.75M</td><td>45.15M</td><td>119.56M</td><td class="up-val">+6%</td></tr>
+          <tr><td>Mar 8</td><td>25.22M</td><td>42.93M</td><td>11.75M*</td><td>46.60M</td><td>126.50M</td><td class="up-val">+6%</td></tr>
+        </tbody>
+      </table>
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:10px;">*YT views unchanged Mar 7→8 (same figure in source). Mar 8 YT & TT engagement pending. All other platform data complete through Mar 8.</div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Week-over-Week Engagement Rate by Platform</div>
+      <div class="chart-sub">Engagement ÷ Views — lower is normal as views scale faster</div>
+      <table>
+        <thead>
+          <tr><th>Platform</th><th>Eng Rate Feb 19</th><th>Eng Rate Mar 8</th><th>Trend</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="platform-pill p-ig">IG</span></td><td>4.78%</td><td>1.69%</td><td class="down-val">↓ Diluting</td><td>Still best overall</td></tr>
+          <tr><td><span class="platform-pill p-fb">FB</span></td><td>2.67%</td><td>0.25%</td><td class="down-val">↓ Sharp drop</td><td>Views far outpacing eng</td></tr>
+          <tr><td><span class="platform-pill p-yt">YT</span></td><td>8.00%</td><td>0.62%*</td><td class="down-val">↓ Normalizing</td><td>*Mar 7 rate, Mar 8 eng pending</td></tr>
+          <tr><td><span class="platform-pill p-tt">TT</span></td><td>1.43%</td><td>0.51%</td><td class="down-val">↓ Normalizing</td><td>Expected for TT scale</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="section" id="charts">
+    <div class="chart-grid">
+      <div class="chart-card wide">
+        <div class="chart-title">Cumulative Views Over Time — All Platforms</div>
+        <div class="chart-sub">Line chart — shows growth velocity per platform (recommended: multi-line)</div>
+        <canvas id="viewsChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Platform View Share (Mar 8)</div>
+        <div class="chart-sub">Doughnut — audience distribution</div>
+        <canvas id="shareChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Engagement Rate by Platform</div>
+        <div class="chart-sub">Bar chart — quality of audience action</div>
+        <canvas id="engChart"></canvas>
+      </div>
+      <div class="chart-card wide">
+        <div class="chart-title">Daily New Views by Platform</div>
+        <div class="chart-sub">Grouped bar chart — views added each day (not cumulative), shows when each platform spiked</div>
+        <canvas id="deltaChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- INSIGHTS -->
+  <div class="section" id="insights">
+    <div class="insights-grid">
+      <div class="insight-card win">
+        <div class="insight-icon">🏆</div>
+        <div class="insight-title">Win #1 — Explosive Day-2 Surge</div>
+        <div class="insight-body">Between Feb 19 and Feb 20, total views jumped from 3.19M to 10.22M — a +220% single-day increase across all platforms. This signals strong algorithmic pickup, likely triggered by early engagement velocity. The content hit critical distribution thresholds on IG and TT simultaneously.</div>
+      </div>
+      <div class="insight-card win">
+        <div class="insight-icon">📈</div>
+        <div class="insight-title">Win #2 — TikTok Overtakes Instagram</div>
+        <div class="insight-body">TikTok started behind IG on Day 1 (693K vs 940K) but surpassed it by Feb 24 (9.57M vs 6.74M) and extended its lead to 20.3M vs 10.1M by Feb 28. TT's algorithm continued pushing the video far longer than IG, indicating excellent hook/completion rate performance.</div>
+      </div>
+      <div class="insight-card win">
+        <div class="insight-icon">💎</div>
+        <div class="insight-title">Win #3 — Instagram Engagement Quality</div>
+        <div class="insight-body">Despite IG having fewer views than FB and TT, it consistently produces the highest engagement rate (3.44% on Feb 28 vs FB's 0.41%). Instagram's audience is more intentional — they're not just scrolling past. This is your highest-quality audience segment.</div>
+      </div>
+      <div class="insight-card flag">
+        <div class="insight-icon">⚠️</div>
+        <div class="insight-title">Red Flag #1 — YouTube Missing Final-Day Data</div>
+        <div class="insight-body">The Feb 28 YouTube row has NULL values for both views and engagement. This creates an incomplete cumulative total and distorts the "All Platforms" figure. Actual total views are likely higher than 50.4M. Needs to be corrected before sharing externally — don't present incomplete data to a client.</div>
+      </div>
+      <div class="insight-card flag">
+        <div class="insight-icon">📉</div>
+        <div class="insight-title">Red Flag #2 — Facebook Engagement Collapse</div>
+        <div class="insight-body">Facebook has the highest view count (19.95M) but the lowest engagement rate of any platform with complete data — just 0.41% by Feb 28, down from 2.67% on Day 1. While some dilution is expected at scale, this drop suggests FB's audience is largely passive. Views are being served but not acted upon.</div>
+      </div>
+      <div class="insight-card flag">
+        <div class="insight-icon">🐢</div>
+        <div class="insight-title">Flag #3 — Growth Deceleration Starting Feb 24</div>
+        <div class="insight-body">After the massive Day 2 spike (+220%), growth rates have been steadily declining: +32%, +29%, +13%, +16%, +18%, +16%. This is normal content decay, but it's important to note the curve is flattening. Without a boost (repost, collaboration, paid push), the video is approaching its organic ceiling.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXEC SUMMARY -->
+  <div class="section" id="exec">
+    <div class="exec-box">
+      <div class="eyebrow" style="margin-bottom:16px;">Executive Summary</div>
+      <p>
+        The <strong>"Meen Yadob"</strong> campaign launched on February 19, 2026 and achieved <strong>viral scale within 48 hours</strong>, accumulating over <strong>126.5 million cumulative views</strong> across Instagram, Facebook, YouTube, and TikTok by March 8 — an 18-day window. The sharpest growth occurred on Day 2, when total views tripled from 3.2M to 10.2M, signaling strong algorithmic amplification across platforms simultaneously. <strong>TikTok leads all platforms with 46.60M views</strong> — now virtually neck-and-neck with the 2025 Kol Sana campaign's 46.74M TikTok total, despite still growing. <strong>Facebook is the second-highest volume driver</strong> (42.93M) but shows the weakest audience quality at 0.25% engagement rate — reach without resonance. <strong>Instagram delivers the highest engagement quality at 1.69%</strong> on 25.22M views, making it the most valuable platform for audience depth. YouTube holds steady at 11.75M views with a 0.62% engagement rate. Growth is stabilizing at 5–6% day-over-day as the campaign enters its long tail, while total engagements have reached <strong>844K — more than 4× the 2025 Kol Sana campaign</strong>.
+      </p>
+    </div>
+  </div>
+
+  <!-- FOLLOWERS & PROFILE VISITS -->
+  <div class="section" id="followers">
+    <div class="kpi-grid" style="margin-bottom:24px;">
+      <div class="kpi-card">
+        <div class="kpi-label">IG Followers Before Post</div>
+        <div class="kpi-value" style="color:var(--ig)">94,700</div>
+        <div class="kpi-sub">Baseline · Feb 18, 2026</div>
+        <div class="kpi-formula">Total followers before video</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">FB Followers Before Post</div>
+        <div class="kpi-value" style="color:var(--fb)">209,000</div>
+        <div class="kpi-sub">Baseline · Feb 18, 2026</div>
+        <div class="kpi-formula">Total followers before video</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">YT Followers Before Post</div>
+        <div class="kpi-value" style="color:var(--yt)">48,000</div>
+        <div class="kpi-sub">Baseline · Feb 18, 2026</div>
+        <div class="kpi-formula">Total followers before video</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TT Followers Before Post</div>
+        <div class="kpi-value" style="color:var(--tt)">168,100</div>
+        <div class="kpi-sub">Baseline · Feb 18, 2026</div>
+        <div class="kpi-formula">Total followers before video</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total New Followers (IG)</div>
+        <div class="kpi-value" style="color:var(--ig)">3,083</div>
+        <div class="kpi-sub">Feb 19–Feb 28 cumulative</div>
+        <div class="kpi-formula">SUM(daily new followers)</div>
+        <span class="badge up">+3.26% growth</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total New Followers (TT)</div>
+        <div class="kpi-value" style="color:var(--tt)">7,861</div>
+        <div class="kpi-sub">Feb 19–Feb 28 cumulative</div>
+        <div class="kpi-formula">SUM(daily new followers)</div>
+        <span class="badge up">+4.68% growth</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Peak Profile Visit Day (IG)</div>
+        <div class="kpi-value">Feb 19</div>
+        <div class="kpi-sub">10,882 visits on launch day</div>
+        <div class="kpi-formula">MAX(daily profile visits)</div>
+        <span class="badge neutral">Day 1 spike</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Peak Profile Visit Day (FB)</div>
+        <div class="kpi-value">Feb 19</div>
+        <div class="kpi-sub">38,759 visits on launch day</div>
+        <div class="kpi-formula">MAX(daily profile visits)</div>
+        <span class="badge neutral">Day 1 spike</span>
+      </div>
+    </div>
+
+    <div class="chart-grid">
+      <div class="chart-card wide">
+        <div class="chart-title">Daily Profile Visits by Platform</div>
+        <div class="chart-sub">How many people visited the profile each day after the video dropped</div>
+        <canvas id="profileVisitsChart" style="max-height:270px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Daily New Followers by Platform</div>
+        <div class="chart-sub">New followers gained each day — conversion from views to audience</div>
+        <canvas id="newFollowersChart" style="max-height:260px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Follower Conversion Rate</div>
+        <div class="chart-sub">New followers ÷ Profile visits — how well each platform converts visitors</div>
+        <canvas id="convRateChart" style="max-height:260px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- KOL SANA 2025 -->
+  <div class="section" id="ks2025">
+    <div class="kpi-grid" style="margin-bottom:24px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Views — All Platforms</div>
+        <div class="kpi-value">65.5M</div>
+        <div class="kpi-sub">TT + FB + YT + IG combined</div>
+        <div class="kpi-formula">46.7M + 7.8M + 6.2M + 4.8M</div>
+        <span class="badge neutral">Kol Sana 2025</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Engagements</div>
+        <div class="kpi-value">187K</div>
+        <div class="kpi-sub">All platforms combined</div>
+        <div class="kpi-formula">136,394 + 26,259 + 18,320 + 6,423</div>
+        <span class="badge neutral">Kol Sana 2025</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Overall Eng. Rate</div>
+        <div class="kpi-value">0.29%</div>
+        <div class="kpi-sub">187K eng ÷ 65.5M views</div>
+        <div class="kpi-formula">Total Eng ÷ Total Views</div>
+        <span class="badge down">Below avg</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TikTok Dominance</div>
+        <div class="kpi-value" style="color:var(--tt)">71.4%</div>
+        <div class="kpi-sub">46.7M of 65.5M total views</div>
+        <div class="kpi-formula">TT Views ÷ Total Views</div>
+        <span class="badge up">Dominant platform</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Best Eng. Rate — 2025</div>
+        <div class="kpi-value" style="color:var(--ig)">Instagram</div>
+        <div class="kpi-sub">26,259 eng ÷ 4.77M views</div>
+        <div class="kpi-formula">26,259 ÷ 4,772,837</div>
+        <span class="badge up">0.55% — Best quality</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TT Eng. Rate — 2025</div>
+        <div class="kpi-value" style="color:var(--tt)">0.29%</div>
+        <div class="kpi-sub">136,394 eng ÷ 46.7M views</div>
+        <div class="kpi-formula">136,394 ÷ 46,746,318</div>
+        <span class="badge neutral">High vol, low rate</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">YT Eng. Rate — 2025</div>
+        <div class="kpi-value" style="color:var(--yt)">0.30%</div>
+        <div class="kpi-sub">18,320 eng ÷ 6.17M views</div>
+        <div class="kpi-formula">18,320 ÷ 6,170,024</div>
+        <span class="badge neutral">Consistent with TT</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">FB Eng. Rate — 2025</div>
+        <div class="kpi-value" style="color:var(--fb)">0.08%</div>
+        <div class="kpi-sub">6,423 eng ÷ 7.85M views</div>
+        <div class="kpi-formula">6,423 ÷ 7,848,701</div>
+        <span class="badge down">Weakest quality</span>
+      </div>
+    </div>
+
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Views by Platform — Kol Sana 2025</div>
+        <div class="chart-sub">Total views distribution across platforms</div>
+        <canvas id="ks25ViewsChart" style="max-height:260px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Engagement by Platform — Kol Sana 2025</div>
+        <div class="chart-sub">Total engagement distribution across platforms</div>
+        <canvas id="ks25EngChart" style="max-height:260px;"></canvas>
+      </div>
+      <div class="chart-card wide">
+        <div class="chart-title">Engagement Rate by Platform — Kol Sana 2025</div>
+        <div class="chart-sub">Eng ÷ Views — audience quality per platform</div>
+        <canvas id="ks25RateChart" style="max-height:240px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2025 vs 2026 COMPARISON -->
+  <div class="section" id="compare">
+    <div class="kpi-grid" style="margin-bottom:24px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Views — 2025</div>
+        <div class="kpi-value">65.5M</div>
+        <div class="kpi-sub">Kol Sana 2025 · all platforms</div>
+        <div class="kpi-formula">Final cumulative total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Views — 2026</div>
+        <div class="kpi-value">126.5M</div>
+        <div class="kpi-sub">Meen Yadob · all platforms · Mar 8</div>
+        <div class="kpi-formula">Final cumulative total</div>
+        <span class="badge up">Still growing</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Views Change YoY</div>
+        <div class="kpi-value" style="color:var(--green)">+93.1%</div>
+        <div class="kpi-sub">126.5M vs 65.5M</div>
+        <div class="kpi-formula">(126.5 - 65.5) ÷ 65.5</div>
+        <span class="badge up">Nearly 2× the reach</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Eng. Rate — 2025</div>
+        <div class="kpi-value">0.29%</div>
+        <div class="kpi-sub">187K eng ÷ 65.5M views</div>
+        <div class="kpi-formula">Overall engagement rate</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Eng. Rate — 2026</div>
+        <div class="kpi-value">0.67%</div>
+        <div class="kpi-sub">844K eng ÷ 126.5M views</div>
+        <div class="kpi-formula">Overall engagement rate</div>
+        <span class="badge up">+131% improvement</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Eng. Rate Change YoY</div>
+        <div class="kpi-value" style="color:var(--green)">+131%</div>
+        <div class="kpi-sub">0.29% → 0.67%</div>
+        <div class="kpi-formula">(0.67 - 0.29) ÷ 0.29 × 100</div>
+        <span class="badge up">Strong quality gain</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Eng — 2025</div>
+        <div class="kpi-value">187K</div>
+        <div class="kpi-sub">All platforms, Kol Sana 2025</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Eng — 2026</div>
+        <div class="kpi-value">844K</div>
+        <div class="kpi-sub">All platforms, Meen Yadob 2026</div>
+        <span class="badge up">+351% more engagements</span>
+      </div>
+    </div>
+
+    <div class="chart-grid">
+      <div class="chart-card wide">
+        <div class="chart-title">Total Views — 2025 vs 2026 by Platform</div>
+        <div class="chart-sub">Side-by-side comparison of final view counts per platform</div>
+        <canvas id="cmpViewsChart" style="max-height:270px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Total Engagements — 2025 vs 2026</div>
+        <div class="chart-sub">How much audience action each campaign generated</div>
+        <canvas id="cmpEngChart" style="max-height:260px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Engagement Rate — 2025 vs 2026 by Platform</div>
+        <div class="chart-sub">Quality of audience response — eng ÷ views</div>
+        <canvas id="cmpRateChart" style="max-height:260px;"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card" style="margin-top:20px;">
+      <div class="chart-title" style="margin-bottom:16px;">Head-to-Head Platform Scorecard</div>
+      <div class="chart-sub" style="margin-bottom:16px;">Winner per metric per platform — 2025 vs 2026</div>
+      <table>
+        <thead>
+          <tr><th>Platform</th><th>Views 2025</th><th>Views 2026</th><th>Views Winner</th><th>Eng 2025</th><th>Eng 2026</th><th>Eng Winner</th><th>Eng Rate 2025</th><th>Eng Rate 2026</th><th>Rate Winner</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="platform-pill p-ig">IG</span></td>
+            <td>4.77M</td><td>25.22M</td><td class="up-val">2026 🏆</td>
+            <td>26,259</td><td>425,174</td><td class="up-val">2026 🏆</td>
+            <td>0.55%</td><td>1.69%</td><td class="up-val">2026 🏆</td>
+          </tr>
+          <tr>
+            <td><span class="platform-pill p-fb">FB</span></td>
+            <td>7.85M</td><td>42.93M</td><td class="up-val">2026 🏆</td>
+            <td>6,423</td><td>108,713</td><td class="up-val">2026 🏆</td>
+            <td>0.08%</td><td>0.25%</td><td class="up-val">2026 🏆</td>
+          </tr>
+          <tr>
+            <td><span class="platform-pill p-yt">YT</span></td>
+            <td>6.17M</td><td>11.75M</td><td class="up-val">2026 🏆</td>
+            <td>18,320</td><td>73,266</td><td class="up-val">2026 🏆</td>
+            <td>0.30%</td><td>0.62%</td><td class="up-val">2026 🏆</td>
+          </tr>
+          <tr>
+            <td><span class="platform-pill p-tt">TT</span></td>
+            <td>46.74M</td><td>46.60M</td><td class="neutral-val">≈ Tie 🤝</td>
+            <td>136,394</td><td>236,433</td><td class="up-val">2026 🏆</td>
+            <td>0.29%</td><td>0.51%</td><td class="up-val">2026 🏆</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:10px;">2026 data through Mar 8 (Meen Yadob, still growing). YT Mar 8 engagement pending. TikTok is now virtually tied (46.60M vs 46.74M) and expected to surpass 2025 soon. 2026 leads on every other metric across all platforms.</div>
+    </div>
+  </div>
+
+  <!-- PLATFORM RACE -->
+  <div class="section" id="race">
+    <div class="race-wrap">
+      <div class="race-header">
+        <div>
+          <div class="chart-title" style="font-size:15px;">🏁 Platform Race — Cumulative Views</div>
+          <div class="chart-sub">Watch platforms compete day by day. Hit Play to animate.</div>
+        </div>
+        <div class="race-controls">
+          <button class="race-btn" id="playBtn" onclick="toggleRace()">▶ Play</button>
+          <button class="race-btn" onclick="resetRace()">↺ Reset</button>
+          <span class="race-speed">Speed: <select id="speedSel" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-family:'DM Mono',monospace;font-size:11px;"><option value="900">Slow</option><option value="600" selected>Normal</option><option value="300">Fast</option></select></span>
+        </div>
+      </div>
+      <div class="race-day-label" id="raceDayLabel">Feb 19</div>
+      <div class="race-bars" id="raceBars"></div>
+      <div class="race-timeline" id="raceTimeline"></div>
+    </div>
+  </div>
+
+  <!-- ENGAGEMENT MOMENTUM -->
+  <div class="section" id="momentum">
+    <div class="momentum-wrap">
+      <div class="momentum-card">
+        <div class="chart-title">⚡ Daily New Engagements — Delta per Platform</div>
+        <div class="chart-sub">How many new engagements were added each day (not cumulative) — shows where audience action is accelerating or fading</div>
+        <canvas id="engDeltaChart" style="max-height:280px;"></canvas>
+      </div>
+      <div class="momentum-card">
+        <div class="chart-title">Engagement Momentum vs Views Momentum</div>
+        <div class="chart-sub">Are engagements keeping pace with views? Gap = passive audience growth</div>
+        <canvas id="momCompareChart" style="max-height:260px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// --- SHARED DATA───────────────────
+const DATES = ['Feb 19','Feb 20','Feb 21','Feb 22','Feb 23','Feb 24','Feb 25','Feb 26','Feb 27','Feb 28','Mar 1','Mar 2','Mar 3','Mar 4','Mar 5','Mar 6','Mar 7','Mar 8'];
+const DATA = {
+  ig: { label:'Instagram', color:'#e1306c', views:[0.94,2.93,4.62,5.27,6.33,6.74,7.61,8.72,9.49,10.14,12.72,14.60,16.35,18.14,20.03,21.96,23.49,25.22],  eng:[44943,216503,232451,289220,309590,318142,327492,337340,344655,348406,361522,370533,378841,387594,398444,408915,417112,425174] },
+  fb: { label:'Facebook',  color:'#1877f2', views:[1.34,3.64,5.65,7.49,9.55,10.38,12.22,14.54,16.47,19.95,23.37,25.73,28.32,30.65,33.14,35.82,39.17,42.93], eng:[35677,57935,62748,67238,70409,71666,73989,76717,78776,81878,85020,88451,91667,95106,98778,102495,105505,108713] },
+  yt: { label:'YouTube',   color:'#ff4444', views:[0.22,0.97,1.48,2.47,3.21,3.93,4.56,5.21,6.08,6.59,7.45,8.20,8.72,9.42,10.18,10.96,11.75,11.75],    eng:[17213,30708,37070,42751,47203,51105,54504,57383,61408,61981,63463,64903,64903,67896,69575,71468,73266,73266] },
+  tt: { label:'TikTok',    color:'#69c9d0', views:[0.69,2.68,4.10,5.72,7.97,9.57,11.19,13.47,16.58,20.31,23.93,28.19,32.15,36.04,40.17,43.92,45.15,46.60], eng:[9912,42773,57493,71423,86564,96721,105771,115823,128898,143988,159057,174134,187187,200264,213327,226388,231420,236433] }
+};
+const PLATFORMS = ['ig','fb','yt','tt'];
+const gridColor = 'rgba(255,255,255,0.05)';
+const tickColor = '#7a7a9a';
+
+function delta(arr) {
+  return arr.map((v,i) => i===0 ? v : (v!==null && arr[i-1]!==null ? +(v - arr[i-1]).toFixed(4) : null));
+}
+
+// --- TAB NAVIGATION────────────────
+function showTab(id, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (el) el.classList.add('active');
+  if (id === 'charts')    setTimeout(initCharts,    50);
+  if (id === 'race')      setTimeout(initRace,      50);
+  if (id === 'momentum')  setTimeout(initMomentum,  50);
+  if (id === 'followers') setTimeout(initFollowers, 50);
+  if (id === 'ks2025')    setTimeout(initKS25,      50);
+  if (id === 'compare')   setTimeout(initCompare,   50);
+}
+
+// --- ORIGINAL CHARTS───────────────
+let chartsInited = false;
+function initCharts() {
+  if (chartsInited) return; chartsInited = true;
+  const ig = DATA.ig.views, fb = DATA.fb.views, yt = DATA.yt.views, tt = DATA.tt.views;
+
+  new Chart(document.getElementById('viewsChart'), {
+    type:'line',
+    data:{ labels:DATES, datasets:[
+      {label:'Instagram',data:ig,borderColor:'#e1306c',backgroundColor:'rgba(225,48,108,0.1)',borderWidth:2.5,tension:0.4,fill:true,pointRadius:3},
+      {label:'Facebook', data:fb,borderColor:'#1877f2',backgroundColor:'rgba(24,119,242,0.1)', borderWidth:2.5,tension:0.4,fill:true,pointRadius:3},
+      {label:'YouTube',  data:yt,borderColor:'#ff4444',backgroundColor:'rgba(255,68,68,0.08)', borderWidth:2.5,tension:0.4,fill:true,pointRadius:3,spanGaps:false},
+      {label:'TikTok',   data:tt,borderColor:'#69c9d0',backgroundColor:'rgba(105,201,208,0.1)',borderWidth:2.5,tension:0.4,fill:true,pointRadius:3},
+    ]},
+    options:{ responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}}},
+      scales:{ x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+               y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v+'M'}} }}
+  });
+
+  new Chart(document.getElementById('shareChart'), {
+    type:'doughnut',
+    data:{ labels:['Facebook','TikTok','Instagram','YouTube (est.)'],
+      datasets:[{data:[42.93,46.60,25.22,11.75],
+        backgroundColor:['rgba(24,119,242,0.8)','rgba(105,201,208,0.8)','rgba(225,48,108,0.8)','rgba(255,68,68,0.8)'],
+        borderColor:'#0a0a0f',borderWidth:3}]},
+    options:{ responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{position:'bottom',labels:{color:'#c8c8e0',font:{family:'DM Mono',size:10},padding:12}}} }
+  });
+
+  new Chart(document.getElementById('deltaChart'), {
+    type:'bar',
+    data:{ labels:DATES, datasets:[
+      {label:'Instagram',data:delta(ig),backgroundColor:'rgba(225,48,108,0.8)',borderRadius:4},
+      {label:'Facebook', data:delta(fb),backgroundColor:'rgba(24,119,242,0.8)', borderRadius:4},
+      {label:'YouTube',  data:delta(yt),backgroundColor:'rgba(255,68,68,0.8)',  borderRadius:4},
+      {label:'TikTok',   data:delta(tt),backgroundColor:'rgba(105,201,208,0.8)',borderRadius:4},
+    ]},
+    options:{ responsive:true,maintainAspectRatio:true,
+      plugins:{ legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: +${ctx.parsed.y?.toFixed(2)}M views`}} },
+      scales:{ x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+               y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>'+'+v+'M'},beginAtZero:true} }}
+  });
+
+  new Chart(document.getElementById('engChart'), {
+    type:'bar',
+    data:{ labels:['Instagram','Facebook','YouTube','TikTok'],
+      datasets:[
+        {label:'Eng Rate Day 1', data:[4.78,2.67,8.0,1.43],backgroundColor:'rgba(167,139,250,0.5)',borderRadius:4},
+        {label:'Eng Rate Day 10',data:[3.44,0.41,null,0.71],backgroundColor:'rgba(167,139,250,0.9)',borderRadius:4}
+      ]},
+    options:{ responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}}},
+      scales:{ x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:11}}},
+               y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v+'%'}} }}
+  });
+}
+
+// --- PLATFORM RACE─────────────────
+let raceDay = 0, raceTimer = null, raceInited = false;
+
+function initRace() {
+  if (raceInited) return; raceInited = true;
+  const tl = document.getElementById('raceTimeline');
+  DATES.forEach((d,i) => {
+    const dot = document.createElement('div');
+    dot.className = 'race-dot' + (i===0?' active':'');
+    dot.textContent = i+1; dot.title = d;
+    dot.onclick = () => { stopRace(); renderRaceDay(i); };
+    tl.appendChild(dot);
+  });
+  renderRaceDay(0);
+}
+
+function renderRaceDay(day) {
+  raceDay = day;
+  document.getElementById('raceDayLabel').textContent = DATES[day];
+
+  const sorted = PLATFORMS
+    .map(p => ({ p, label:DATA[p].label, color:DATA[p].color, val:DATA[p].views[day] }))
+    .filter(x => x.val !== null)
+    .sort((a,b) => b.val - a.val);
+
+  const maxVal = sorted[0].val;
+  const container = document.getElementById('raceBars');
+  container.innerHTML = '';
+
+  sorted.forEach((item, rank) => {
+    const pct = (item.val / maxVal * 100).toFixed(1);
+    const medal = ['🥇','🥈','🥉','4'][rank] || rank+1;
+    const row = document.createElement('div');
+    row.className = 'race-row';
+    row.innerHTML = `
+      <div class="race-rank ${rank===0?'gold':''}">${medal}</div>
+      <div class="race-platform" style="color:${item.color}">${item.label}</div>
+      <div class="race-bar-track">
+        <div class="race-bar-fill" id="bar_${item.p}" style="width:0%;background:${item.color}33;border:1px solid ${item.color}66;">
+          <span class="race-bar-val" style="color:${item.color}">${item.val.toFixed(2)}M</span>
+        </div>
+      </div>`;
+    container.appendChild(row);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const fill = document.getElementById('bar_'+item.p);
+      if (fill) fill.style.width = pct+'%';
+    }));
+  });
+
+  document.querySelectorAll('.race-dot').forEach((d,i) => d.classList.toggle('active', i===day));
+}
+
+function toggleRace() {
+  if (raceTimer) { stopRace(); return; }
+  const btn = document.getElementById('playBtn');
+  btn.textContent = '⏸ Pause'; btn.classList.add('playing');
+  if (raceDay >= DATES.length - 1) raceDay = -1;
+  function step() {
+    raceDay++;
+    renderRaceDay(raceDay);
+    if (raceDay < DATES.length - 1) {
+      const speed = parseInt(document.getElementById('speedSel').value);
+      raceTimer = setTimeout(step, speed);
+    } else { stopRace(); }
+  }
+  raceTimer = setTimeout(step, parseInt(document.getElementById('speedSel').value));
+}
+
+function stopRace() {
+  clearTimeout(raceTimer); raceTimer = null;
+  const btn = document.getElementById('playBtn');
+  if (btn) { btn.textContent = '▶ Play'; btn.classList.remove('playing'); }
+}
+
+function resetRace() { stopRace(); renderRaceDay(0); }
+
+// --- ENGAGEMENT MOMENTUM───────────
+let momentumInited = false;
+function initMomentum() {
+  if (momentumInited) return; momentumInited = true;
+
+  // Chart 1: daily new engagements per platform (delta)
+  new Chart(document.getElementById('engDeltaChart'), {
+    type:'bar',
+    data:{ labels:DATES, datasets: PLATFORMS.map(p => ({
+      label: DATA[p].label,
+      data: delta(DATA[p].eng),
+      backgroundColor: DATA[p].color + 'cc',
+      borderRadius: 4
+    }))},
+    options:{ responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: +${ctx.parsed.y?.toLocaleString()} eng`}} },
+      scales:{ x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+               y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>'+'+Number(v).toLocaleString()},beginAtZero:true} }}
+  });
+
+  // Chart 2: views growth index vs engagement growth index (all platforms combined, Day 1 = 100)
+  const totalViewsDelta = DATES.map((_,i) =>
+    PLATFORMS.reduce((sum,p) => {
+      const v=DATA[p].views[i], prev=i>0?DATA[p].views[i-1]:0;
+      return sum + (v!==null&&prev!==null ? v-prev : 0);
+    }, 0));
+  const totalEngDelta = DATES.map((_,i) =>
+    PLATFORMS.reduce((sum,p) => {
+      const v=DATA[p].eng[i], prev=i>0?DATA[p].eng[i-1]:0;
+      return sum + (v!==null&&prev!==null ? v-prev : 0);
+    }, 0));
+  const norm = arr => arr.map(v => +(v/arr[0]*100).toFixed(1));
+
+  new Chart(document.getElementById('momCompareChart'), {
+    type:'line',
+    data:{ labels:DATES, datasets:[
+      {label:'Views Growth (indexed to Day 1 = 100)',      data:norm(totalViewsDelta), borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.1)',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4},
+      {label:'Engagement Growth (indexed to Day 1 = 100)', data:norm(totalEngDelta),  borderColor:'#34d399',backgroundColor:'rgba(52,211,153,0.1)', borderWidth:2.5,tension:0.4,fill:true,pointRadius:4}
+    ]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}`}} },
+      scales:{ x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+               y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}},beginAtZero:true} }}
+  });
+}
+
+// --- FOLLOWERS & PROFILE VISITS ---
+let followersInited = false;
+function initFollowers() {
+  if (followersInited) return; followersInited = true;
+
+  const dates = ['Feb 19','Feb 20','Feb 21','Feb 22','Feb 23','Feb 24','Feb 25','Feb 26','Feb 27','Feb 28','Mar 1','Mar 2','Mar 3','Mar 4','Mar 5','Mar 6','Mar 7','Mar 8'];
+
+  // Profile Visits
+  const pv = {
+    ig: [10882,10402,5000,4591,3094,1970,2419,3624,3061,4262,4894,4776,4464,4470,10377,4806,3909,2789],
+    fb: [38759,22726,8122,6159,4692,2732,2960,3425,3135,4650,4791,4429,4418,5473,7667,8305,6709,6415],
+    yt: [904,1140,917,813,826,901,733,696,648,651,381,495,510,453,702,633,654,null],
+    tt: [1906,5879,4451,4578,4405,4484,4249,5897,8891,8549,8208,8852,8879,8757,11021,10891,null,null],
+  };
+
+  // Daily new followers
+  const nf = {
+    ig: [1013,931,363,318,193,174,281,209,193,102,85,88,99,109,559,331,320,null],
+    fb: [5451,1882,433,322,210,123,107,85,80,97,85,58,78,108,231,233,260,321],
+    yt: [282,284,181,151,123,120,96,141,92,90,67,72,84,92,120,131,120,null],
+    tt: [179,1233,876,801,757,739,664,710,970,1042,1114,1111,1075,1063,1246,1368,null,null],
+  };
+
+  // Chart 1: Profile Visits
+  new Chart(document.getElementById('profileVisitsChart'), {
+    type: 'line',
+    data: { labels: dates, datasets: [
+      {label:'Instagram', data:pv.ig, borderColor:'#e1306c', backgroundColor:'rgba(225,48,108,0.08)', borderWidth:2.5, tension:0.4, fill:true, pointRadius:4},
+      {label:'Facebook',  data:pv.fb, borderColor:'#1877f2', backgroundColor:'rgba(24,119,242,0.08)',  borderWidth:2.5, tension:0.4, fill:true, pointRadius:4},
+      {label:'YouTube',   data:pv.yt, borderColor:'#ff4444', backgroundColor:'rgba(255,68,68,0.06)',   borderWidth:2.5, tension:0.4, fill:true, pointRadius:4, spanGaps:false},
+      {label:'TikTok',    data:pv.tt, borderColor:'#69c9d0', backgroundColor:'rgba(105,201,208,0.08)', borderWidth:2.5, tension:0.4, fill:true, pointRadius:4, spanGaps:false},
+    ]},
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y?.toLocaleString()} visits`}} },
+      scales:{
+        x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+        y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v.toLocaleString()},beginAtZero:true}
+      }
+    }
+  });
+
+  // Chart 2: Daily new followers grouped bar
+  new Chart(document.getElementById('newFollowersChart'), {
+    type: 'bar',
+    data: { labels: dates, datasets: [
+      {label:'Instagram', data:nf.ig, backgroundColor:'rgba(225,48,108,0.8)', borderRadius:3},
+      {label:'Facebook',  data:nf.fb, backgroundColor:'rgba(24,119,242,0.8)',  borderRadius:3},
+      {label:'YouTube',   data:nf.yt, backgroundColor:'rgba(255,68,68,0.8)',   borderRadius:3},
+      {label:'TikTok',    data:nf.tt, backgroundColor:'rgba(105,201,208,0.8)', borderRadius:3},
+    ]},
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: +${ctx.parsed.y?.toLocaleString()} followers`}} },
+      scales:{
+        x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+        y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>'+'+v.toLocaleString()},beginAtZero:true}
+      }
+    }
+  });
+
+  // Chart 3: Follower conversion rate (new followers / profile visits) per platform per day
+  const cvr = (nfArr, pvArr) => nfArr.map((v,i) => (v!==null && pvArr[i]) ? +((v/pvArr[i])*100).toFixed(1) : null);
+  new Chart(document.getElementById('convRateChart'), {
+    type: 'line',
+    data: { labels: dates, datasets: [
+      {label:'Instagram', data:cvr(nf.ig,pv.ig), borderColor:'#e1306c', backgroundColor:'rgba(225,48,108,0.08)', borderWidth:2, tension:0.4, pointRadius:4, fill:false},
+      {label:'Facebook',  data:cvr(nf.fb,pv.fb), borderColor:'#1877f2', backgroundColor:'rgba(24,119,242,0.08)',  borderWidth:2, tension:0.4, pointRadius:4, fill:false},
+      {label:'YouTube',   data:cvr(nf.yt,pv.yt), borderColor:'#ff4444', backgroundColor:'rgba(255,68,68,0.06)',   borderWidth:2, tension:0.4, pointRadius:4, fill:false, spanGaps:false},
+      {label:'TikTok',    data:cvr(nf.tt,pv.tt), borderColor:'#69c9d0', backgroundColor:'rgba(105,201,208,0.08)', borderWidth:2, tension:0.4, pointRadius:4, fill:false, spanGaps:false},
+    ]},
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}%`}} },
+      scales:{
+        x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10}}},
+        y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v+'%'},beginAtZero:true}
+      }
+    }
+  });
+}
+// --- KOL SANA 2025 CHARTS ---
+let ks25Inited = false;
+function initKS25() {
+  if (ks25Inited) return; ks25Inited = true;
+
+  const platforms = ['TikTok','Facebook','YouTube','Instagram'];
+  const colors = ['rgba(105,201,208,0.85)','rgba(24,119,242,0.85)','rgba(255,68,68,0.85)','rgba(225,48,108,0.85)'];
+  const views25  = [46746318, 7848701, 6170024, 4772837];
+  const eng25    = [136394,   6423,    18320,   26259];
+  const rates25  = [0.29,     0.08,    0.30,    0.55];
+
+  new Chart(document.getElementById('ks25ViewsChart'), {
+    type: 'doughnut',
+    data: { labels: platforms, datasets: [{ data: views25, backgroundColor: colors, borderColor:'#0a0a0f', borderWidth:3 }] },
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins: { legend: { position:'bottom', labels: { color:'#c8c8e0', font:{family:'DM Mono',size:11}, padding:12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${(ctx.parsed/1e6).toFixed(2)}M views` } } } }
+  });
+
+  new Chart(document.getElementById('ks25EngChart'), {
+    type: 'doughnut',
+    data: { labels: platforms, datasets: [{ data: eng25, backgroundColor: colors, borderColor:'#0a0a0f', borderWidth:3 }] },
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins: { legend: { position:'bottom', labels: { color:'#c8c8e0', font:{family:'DM Mono',size:11}, padding:12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()} eng` } } } }
+  });
+
+  new Chart(document.getElementById('ks25RateChart'), {
+    type: 'bar',
+    data: { labels: platforms, datasets: [{ label: 'Engagement Rate %', data: rates25, backgroundColor: colors, borderRadius: 6 }] },
+    options: { responsive:true, maintainAspectRatio:true, indexAxis:'y',
+      plugins: { legend: { display:false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}%` } } },
+      scales: { x: { grid:{color:gridColor}, ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v+'%'} },
+                y: { grid:{color:gridColor}, ticks:{color:tickColor,font:{family:'DM Mono',size:11}} } } }
+  });
+}
+
+// --- 2025 vs 2026 COMPARISON CHARTS ---
+let compareInited = false;
+function initCompare() {
+  if (compareInited) return; compareInited = true;
+
+  const platforms = ['Instagram','Facebook','YouTube','TikTok'];
+  const c25 = ['rgba(225,48,108,0.5)','rgba(24,119,242,0.5)','rgba(255,68,68,0.5)','rgba(105,201,208,0.5)'];
+  const c26 = ['rgba(225,48,108,0.9)','rgba(24,119,242,0.9)','rgba(255,68,68,0.9)','rgba(105,201,208,0.9)'];
+
+  const views25  = [4.77,  7.85,  6.17,  46.74];
+  const views26  = [25.22, 42.93, 11.75, 46.60];
+  const eng25    = [26259,  6423,  18320, 136394];
+  const eng26    = [425174, 108713, 73266, 236433];
+  const rates25  = [0.55,  0.08,  0.30,  0.29];
+  const rates26  = [1.69,  0.25,  0.62,  0.51];
+
+  // Views grouped bar
+  new Chart(document.getElementById('cmpViewsChart'), {
+    type: 'bar',
+    data: { labels: platforms, datasets: [
+      { label: 'Kol Sana 2025', data: views25, backgroundColor: c25, borderRadius:5 },
+      { label: 'Main Copy 2026', data: views26, backgroundColor: c26, borderRadius:5 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins: { legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}M views`}} },
+      scales: { x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:11}}},
+                y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v+'M'},beginAtZero:true} } }
+  });
+
+  // Engagements grouped bar
+  new Chart(document.getElementById('cmpEngChart'), {
+    type: 'bar',
+    data: { labels: platforms, datasets: [
+      { label: 'Kol Sana 2025', data: eng25, backgroundColor: c25, borderRadius:5 },
+      { label: 'Main Copy 2026', data: eng26, backgroundColor: c26, borderRadius:5 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins: { legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}`}} },
+      scales: { x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:11}}},
+                y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v.toLocaleString()},beginAtZero:true} } }
+  });
+
+  // Engagement rate comparison
+  new Chart(document.getElementById('cmpRateChart'), {
+    type: 'bar',
+    data: { labels: platforms, datasets: [
+      { label: 'Kol Sana 2025', data: rates25, backgroundColor: c25, borderRadius:5 },
+      { label: 'Main Copy 2026', data: rates26, backgroundColor: c26, borderRadius:5 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins: { legend:{labels:{color:'#c8c8e0',font:{family:'DM Mono',size:11}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}%`}} },
+      scales: { x:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:11}}},
+                y:{grid:{color:gridColor},ticks:{color:tickColor,font:{family:'DM Mono',size:10},callback:v=>v+'%'},beginAtZero:true} } }
+  });
+}
+</script>
+</body>
+</html>
